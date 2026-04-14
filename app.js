@@ -27,7 +27,9 @@ const MAX_ROWS = 6;
 const WORD_LENGTH = 5;
 const STORAGE_KEY = "stevel-state";
 const FAMILY_KEY = "stevel-family-scores";
+const DICTIONARY_CACHE_KEY = "stevel-dictionary-cache";
 const DEFAULT_PLAYER = "Steve";
+const DICTIONARY_API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 
 const boardEl = document.getElementById("board");
 const keyboardEl = document.getElementById("keyboard");
@@ -43,6 +45,7 @@ const importButton = document.getElementById("import-button");
 
 let state = createFreshState();
 let familyScores = loadFamilyScores();
+let dictionaryCache = loadDictionaryCache();
 
 function createFreshState() {
   return {
@@ -87,6 +90,19 @@ function loadFamilyScores() {
 
 function saveFamilyScores() {
   localStorage.setItem(FAMILY_KEY, JSON.stringify(familyScores));
+}
+
+function loadDictionaryCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DICTIONARY_CACHE_KEY));
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDictionaryCache() {
+  localStorage.setItem(DICTIONARY_CACHE_KEY, JSON.stringify(dictionaryCache));
 }
 
 function ensurePlayerRecord(name) {
@@ -242,6 +258,40 @@ function showMessage(text) {
   messageEl.textContent = text;
 }
 
+async function lookupWordOnline(word) {
+  const normalized = word.toLowerCase();
+
+  if (dictionaryCache[normalized] !== undefined) {
+    return dictionaryCache[normalized];
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 3500);
+
+  try {
+    const response = await fetch(`${DICTIONARY_API_URL}${encodeURIComponent(normalized)}`, {
+      method: "GET",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      dictionaryCache[normalized] = false;
+      saveDictionaryCache();
+      return false;
+    }
+
+    const data = await response.json();
+    const isValid = Array.isArray(data) && data.length > 0;
+    dictionaryCache[normalized] = isValid;
+    saveDictionaryCache();
+    return isValid;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 function setActivePlayer(name) {
   const safeName = ensurePlayerRecord(name);
   state.playerName = safeName;
@@ -342,7 +392,7 @@ function recordRound(didWin) {
   buildScoreboard();
 }
 
-function handleEnter() {
+async function handleEnter() {
   if (state.letterIndex < WORD_LENGTH) {
     showMessage("Need 5 letters before you can submit.");
     shakeRow(state.rowIndex);
@@ -353,9 +403,21 @@ function handleEnter() {
   const guessWord = guess.join("");
 
   if (!VALID_GUESSES.has(guessWord)) {
-    showMessage("That word is not in this game's dictionary.");
-    shakeRow(state.rowIndex);
-    return;
+    showMessage("Checking the online dictionary...");
+    const onlineResult = await lookupWordOnline(guessWord);
+
+    if (onlineResult === true) {
+      VALID_GUESSES.add(guessWord);
+      showMessage("Word accepted.");
+    } else if (onlineResult === false) {
+      showMessage("That word is not recognized by the online dictionary.");
+      shakeRow(state.rowIndex);
+      return;
+    } else {
+      showMessage("Dictionary check is unavailable right now. Try again when online.");
+      shakeRow(state.rowIndex);
+      return;
+    }
   }
 
   const evaluation = evaluateGuess(guess);
@@ -401,9 +463,9 @@ function handleLetter(letter) {
   saveState();
 }
 
-function handleInput(key) {
+async function handleInput(key) {
   if (key === "ENTER") {
-    handleEnter();
+    await handleEnter();
     return;
   }
 
@@ -429,14 +491,14 @@ function resetGame() {
 }
 
 function registerHardwareKeyboard() {
-  window.addEventListener("keydown", (event) => {
+  window.addEventListener("keydown", async (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      handleInput("ENTER");
+      await handleInput("ENTER");
       return;
     }
 
@@ -448,7 +510,7 @@ function registerHardwareKeyboard() {
 
     const letter = event.key.toUpperCase();
     if (/^[A-Z]$/.test(letter)) {
-      handleInput(letter);
+      await handleInput(letter);
     }
   });
 }
