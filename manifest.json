@@ -1,0 +1,10 @@
+{
+  "name": "Stevel",
+  "short_name": "Stevel",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6efe4",
+  "theme_color": "#f6efe4",
+  "description": "Stevel is a funny Wordle-style family word game for iPhone and iPad.",
+  "icons": []
+}
