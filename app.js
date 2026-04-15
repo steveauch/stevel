@@ -751,8 +751,6 @@ function initControls() {
 
 async function init() {
   loadState();
-  await initializeWordBank();
-  state.answer = pickAnswerForGame(state.gameNumber);
   ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
   buildBoard();
   buildKeyboard();
@@ -770,6 +768,10 @@ async function init() {
       showMessage(`Round over. The word was ${state.answer}.`);
     }
   }
+
+  await initializeWordBank();
+  state.answer = pickAnswerForGame(state.gameNumber);
+  saveState();
 }
 
 init();
