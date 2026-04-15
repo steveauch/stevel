@@ -622,7 +622,7 @@ function nextGame() {
 
 function registerHardwareKeyboard() {
   window.addEventListener("keydown", async (event) => {
-    const target = event.target;
+    const target = document.activeElement || event.target;
     const isEditableField =
       target instanceof HTMLElement &&
       (
