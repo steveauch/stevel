@@ -46,10 +46,10 @@ const scoreboardEl = document.getElementById("scoreboard");
 const shareButton = document.getElementById("share-button");
 const importButton = document.getElementById("import-button");
 
+let wordBank = ANSWERS.slice();
 let state = createFreshState();
 let familyScores = loadFamilyScores();
 let dictionaryCache = loadDictionaryCache();
-let wordBank = ANSWERS.slice();
 
 function getDefaultGameNumber() {
   return 1;
@@ -763,7 +763,7 @@ async function init() {
 
   if (state.finished) {
     if (state.guesses[state.rowIndex].join("") === state.answer) {
-      showMessage(`You won. Tap New Round to play again.`);
+      showMessage(`You won. Tap Next Game when everyone is ready.`);
     } else {
       showMessage(`Round over. The word was ${state.answer}.`);
     }
