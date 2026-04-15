@@ -261,6 +261,15 @@ function updateGameNumberDisplay() {
   gameNumberEl.textContent = String(state.gameNumber);
 }
 
+function isEditableFieldFocused() {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && (
+    active.tagName === "INPUT" ||
+    active.tagName === "TEXTAREA" ||
+    active.isContentEditable
+  );
+}
+
 async function initializeWordBank() {
   const cachedBank = loadWordBankCache();
   if (cachedBank && cachedBank.length > 0) {
@@ -348,7 +357,13 @@ function buildKeyboard() {
         button.classList.add(stateClass);
       }
 
-      button.addEventListener("click", () => handleInput(key));
+      button.addEventListener("click", () => {
+        if (isEditableFieldFocused()) {
+          return;
+        }
+
+        handleInput(key);
+      });
       rowEl.appendChild(button);
     });
 
@@ -506,6 +521,10 @@ function recordRound(didWin) {
 }
 
 async function handleEnter() {
+  if (isEditableFieldFocused()) {
+    return;
+  }
+
   if (state.letterIndex < WORD_LENGTH) {
     showMessage("Need 5 letters before you can submit.");
     shakeRow(state.rowIndex);
@@ -565,7 +584,11 @@ function handleBackspace() {
   saveState();
 }
 
-function handleLetter(letter) {
+async function handleLetter(letter) {
+  if (isEditableFieldFocused()) {
+    return;
+  }
+
   if (state.letterIndex >= WORD_LENGTH || state.finished) {
     return;
   }
@@ -574,9 +597,17 @@ function handleLetter(letter) {
   updateTile(state.rowIndex, state.letterIndex);
   state.letterIndex += 1;
   saveState();
+
+  if (state.letterIndex === WORD_LENGTH) {
+    await handleEnter();
+  }
 }
 
 async function handleInput(key) {
+  if (isEditableFieldFocused()) {
+    return;
+  }
+
   if (key === "ENTER") {
     await handleEnter();
     return;
@@ -588,7 +619,7 @@ async function handleInput(key) {
   }
 
   if (/^[A-Z]$/.test(key)) {
-    handleLetter(key);
+    await handleLetter(key);
   }
 }
 
@@ -622,16 +653,7 @@ function nextGame() {
 
 function registerHardwareKeyboard() {
   window.addEventListener("keydown", async (event) => {
-    const target = document.activeElement || event.target;
-    const isEditableField =
-      target instanceof HTMLElement &&
-      (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      );
-
-    if (isEditableField) {
+    if (isEditableFieldFocused()) {
       return;
     }
 

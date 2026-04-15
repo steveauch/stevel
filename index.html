@@ -46,10 +46,13 @@
     <main class="game-panel">
       <section class="status-card">
         <div>
-          <p class="status-label">Guess the hidden five-letter word</p>
+          <p class="status-label">Now playing Game <span id="game-number">1</span></p>
           <p class="status-copy" id="message">You have 6 tries.</p>
         </div>
-        <button class="pill-button" id="reset-button" type="button">New Round</button>
+        <div class="status-actions">
+          <button class="pill-button secondary-button" id="reset-button" type="button">Replay Game</button>
+          <button class="pill-button" id="next-game-button" type="button">Next Game</button>
+        </div>
       </section>
 
       <section class="score-card" aria-label="Family score keeping">
