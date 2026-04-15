@@ -37,7 +37,6 @@ const boardEl = document.getElementById("board");
 const keyboardEl = document.getElementById("keyboard");
 const messageEl = document.getElementById("message");
 const gameNumberEl = document.getElementById("game-number");
-const resetButton = document.getElementById("reset-button");
 const nextGameButton = document.getElementById("next-game-button");
 const helpButton = document.getElementById("help-button");
 const helpDialog = document.getElementById("help-dialog");
@@ -623,20 +622,6 @@ async function handleInput(key) {
   }
 }
 
-function resetGame() {
-  const playerName = ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
-  state = createFreshState({
-    gameNumber: state.gameNumber,
-    playerName
-  });
-  buildBoard();
-  buildKeyboard();
-  buildScoreboard();
-  updateGameNumberDisplay();
-  showMessage("You have 6 tries.");
-  saveState();
-}
-
 function nextGame() {
   const playerName = ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
   state = createFreshState({
@@ -685,7 +670,6 @@ function initDialog() {
 }
 
 function initControls() {
-  resetButton.addEventListener("click", resetGame);
   nextGameButton.addEventListener("click", nextGame);
   savePlayerButton.addEventListener("click", () => {
     const nextName = sanitizePlayerName(playerNameEl.value);
