@@ -28,13 +28,17 @@ const WORD_LENGTH = 5;
 const STORAGE_KEY = "stevel-state";
 const FAMILY_KEY = "stevel-family-scores";
 const DICTIONARY_CACHE_KEY = "stevel-dictionary-cache";
+const WORD_BANK_CACHE_KEY = "stevel-word-bank-cache-v1";
 const DEFAULT_PLAYER = "Steve";
 const DICTIONARY_API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+const ONLINE_WORD_BANK_URL = "https://raw.githubusercontent.com/darkermango/5-Letter-words/v1.0.0/words.json";
 
 const boardEl = document.getElementById("board");
 const keyboardEl = document.getElementById("keyboard");
 const messageEl = document.getElementById("message");
+const gameNumberEl = document.getElementById("game-number");
 const resetButton = document.getElementById("reset-button");
+const nextGameButton = document.getElementById("next-game-button");
 const helpButton = document.getElementById("help-button");
 const helpDialog = document.getElementById("help-dialog");
 const playerNameEl = document.getElementById("player-name");
@@ -46,17 +50,44 @@ const importButton = document.getElementById("import-button");
 let state = createFreshState();
 let familyScores = loadFamilyScores();
 let dictionaryCache = loadDictionaryCache();
+let wordBank = ANSWERS.slice();
 
-function createFreshState() {
+function getDefaultGameNumber() {
+  return 1;
+}
+
+function hashGameNumber(gameNumber) {
+  const normalized = String(gameNumber);
+  let hash = 0;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) % 2147483647;
+  }
+
+  return hash;
+}
+
+function pickAnswerForGame(gameNumber) {
+  const bank = wordBank.length > 0 ? wordBank : ANSWERS;
+  return bank[hashGameNumber(gameNumber) % bank.length];
+}
+
+function createFreshState(overrides = {}) {
+  const gameNumber = Number.isInteger(overrides.gameNumber) && overrides.gameNumber > 0
+    ? overrides.gameNumber
+    : getDefaultGameNumber();
+  const playerName = overrides.playerName || DEFAULT_PLAYER;
+
   return {
-    answer: ANSWERS[Math.floor(Math.random() * ANSWERS.length)],
+    answer: pickAnswerForGame(gameNumber),
     guesses: Array.from({ length: MAX_ROWS }, () => Array(WORD_LENGTH).fill("")),
     evaluations: Array.from({ length: MAX_ROWS }, () => Array(WORD_LENGTH).fill("")),
     rowIndex: 0,
     letterIndex: 0,
     finished: false,
     keyStates: {},
-    playerName: DEFAULT_PLAYER,
+    playerName,
+    gameNumber,
     roundRecorded: false
   };
 }
@@ -68,7 +99,8 @@ function createEmptyPlayerRecord(name) {
     wins: 0,
     losses: 0,
     streak: 0,
-    best: null
+    best: null,
+    games: {}
   };
 }
 
@@ -105,10 +137,39 @@ function saveDictionaryCache() {
   localStorage.setItem(DICTIONARY_CACHE_KEY, JSON.stringify(dictionaryCache));
 }
 
+function loadWordBankCache() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WORD_BANK_CACHE_KEY));
+    if (!Array.isArray(saved) || saved.length === 0) {
+      return null;
+    }
+
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
+function saveWordBankCache(words) {
+  localStorage.setItem(WORD_BANK_CACHE_KEY, JSON.stringify(words));
+}
+
+function normalizeWordBank(words) {
+  return [...new Set(
+    words
+      .filter((word) => typeof word === "string")
+      .map((word) => word.trim().toUpperCase())
+      .filter((word) => /^[A-Z]{5}$/.test(word))
+  )];
+}
+
 function ensurePlayerRecord(name) {
   const safeName = sanitizePlayerName(name) || DEFAULT_PLAYER;
   if (!familyScores[safeName]) {
     familyScores[safeName] = createEmptyPlayerRecord(safeName);
+    saveFamilyScores();
+  } else if (!familyScores[safeName].games || typeof familyScores[safeName].games !== "object") {
+    familyScores[safeName].games = {};
     saveFamilyScores();
   }
   return safeName;
@@ -133,6 +194,8 @@ function loadState() {
 
     state = saved;
     state.playerName = ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
+    state.gameNumber = Number.isInteger(saved.gameNumber) && saved.gameNumber > 0 ? saved.gameNumber : getDefaultGameNumber();
+    state.answer = pickAnswerForGame(state.gameNumber);
     state.roundRecorded = Boolean(state.roundRecorded);
   } catch {
     state = createFreshState();
@@ -192,6 +255,45 @@ function buildScoreboard() {
 
     scoreboardEl.appendChild(row);
   });
+}
+
+function updateGameNumberDisplay() {
+  gameNumberEl.textContent = String(state.gameNumber);
+}
+
+async function initializeWordBank() {
+  const cachedBank = loadWordBankCache();
+  if (cachedBank && cachedBank.length > 0) {
+    wordBank = normalizeWordBank(cachedBank);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(ONLINE_WORD_BANK_URL, {
+      method: "GET",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch word bank");
+    }
+
+    const data = await response.json();
+    const normalizedBank = normalizeWordBank(data);
+
+    if (normalizedBank.length > 0) {
+      wordBank = normalizedBank;
+      saveWordBankCache(normalizedBank);
+    }
+  } catch {
+    if (!cachedBank || cachedBank.length === 0) {
+      wordBank = ANSWERS.slice();
+    }
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function buildBoard() {
@@ -374,6 +476,13 @@ function recordRound(didWin) {
 
   const playerName = ensurePlayerRecord(state.playerName);
   const record = familyScores[playerName];
+  const gameKey = String(state.gameNumber);
+
+  if (record.games[gameKey]) {
+    state.roundRecorded = true;
+    buildScoreboard();
+    return;
+  }
 
   record.played += 1;
 
@@ -387,6 +496,10 @@ function recordRound(didWin) {
     record.streak = 0;
   }
 
+  record.games[gameKey] = {
+    won: didWin,
+    tries: didWin ? state.rowIndex + 1 : null
+  };
   state.roundRecorded = true;
   saveFamilyScores();
   buildScoreboard();
@@ -480,18 +593,48 @@ async function handleInput(key) {
 }
 
 function resetGame() {
-  const playerName = state.playerName || DEFAULT_PLAYER;
-  state = createFreshState();
-  state.playerName = ensurePlayerRecord(playerName);
+  const playerName = ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
+  state = createFreshState({
+    gameNumber: state.gameNumber,
+    playerName
+  });
   buildBoard();
   buildKeyboard();
   buildScoreboard();
+  updateGameNumberDisplay();
   showMessage("You have 6 tries.");
+  saveState();
+}
+
+function nextGame() {
+  const playerName = ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
+  state = createFreshState({
+    gameNumber: state.gameNumber + 1,
+    playerName
+  });
+  buildBoard();
+  buildKeyboard();
+  buildScoreboard();
+  updateGameNumberDisplay();
+  showMessage(`Game ${state.gameNumber} is ready.`);
   saveState();
 }
 
 function registerHardwareKeyboard() {
   window.addEventListener("keydown", async (event) => {
+    const target = event.target;
+    const isEditableField =
+      target instanceof HTMLElement &&
+      (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+
+    if (isEditableField) {
+      return;
+    }
+
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
@@ -521,6 +664,7 @@ function initDialog() {
 
 function initControls() {
   resetButton.addEventListener("click", resetGame);
+  nextGameButton.addEventListener("click", nextGame);
   savePlayerButton.addEventListener("click", () => {
     const nextName = sanitizePlayerName(playerNameEl.value);
     if (!nextName) {
@@ -582,7 +726,11 @@ function initControls() {
           streak: Math.max(existing.streak, Number(record.streak) || 0),
           best: existing.best === null ? (Number(record.best) || null) : (
             Number(record.best) ? Math.min(existing.best, Number(record.best)) : existing.best
-          )
+          ),
+          games: {
+            ...(existing.games && typeof existing.games === "object" ? existing.games : {}),
+            ...(record.games && typeof record.games === "object" ? record.games : {})
+          }
         };
       });
 
@@ -595,12 +743,15 @@ function initControls() {
   });
 }
 
-function init() {
+async function init() {
   loadState();
+  await initializeWordBank();
+  state.answer = pickAnswerForGame(state.gameNumber);
   ensurePlayerRecord(state.playerName || DEFAULT_PLAYER);
   buildBoard();
   buildKeyboard();
   buildScoreboard();
+  updateGameNumberDisplay();
   registerHardwareKeyboard();
   initControls();
   initDialog();
